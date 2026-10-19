@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mô Hình 3D Lớp Học Đại Học Việt Nam - Sát Thực Tế</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, sans-serif; }
+    body { overflow: hidden; background: #1e242b; color: #fff; }
+    #canvas-container { width: 100vw; height: 100vh; display: block; }
+
+    /* Bảng điều khiển tương tác */
+    .ui-panel {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      width: 310px;
+      background: rgba(20, 26, 34, 0.88);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+      z-index: 10;
+    }
+    .ui-panel h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #5ce1e6;
+      margin-bottom: 6px;
+    }
+    .ui-panel p.hint {
+      font-size: 12px;
+      color: #cbd5e1;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+    .control-group {
+      margin-bottom: 12px;
+    }
+    .control-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 500;
+      margin-bottom: 5px;
+      color: #e2e8f0;
+    }
+    .control-group input[type="range"] {
+      width: 100%;
+      accent-color: #5ce1e6;
+      cursor: pointer;
+    }
+    .btn-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-top: 6px;
+    }
+    button {
+      background: rgba(255, 255, 255, 0.1);
+      color: #f8fafc;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      padding: 7px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: rgba(92, 225, 230, 0.25);
+      border-color: #5ce1e6;
+    }
+    button.active {
+      background: #0ea5e9;
+      border-color: #38bdf8;
+      font-weight: 600;
+    }
+    .toggle-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 13px;
+    }
+    .toggle-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: #5ce1e6;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div class="ui-panel">
+    <h2>Mô Hình 3D Lớp Học Thực Tế</h2>
+    <p class="hint">Chuột trái: Xoay 360° | Cuộn: Thu phóng | Chuột phải: Dịch chuyển góc nhìn</p>
+
+    <div class="control-group">
+      <label>Chuyển nhanh góc nhìn (Theo 4 ảnh):</label>
+      <div class="btn-grid">
+        <button onclick="setCameraView('backSeat')">Cuối lớp (Ảnh 1-2)</button>
+        <button onclick="setCameraView('doorStair')">Cửa & Cầu thang (Ảnh 3)</button>
+        <button onclick="setCameraView('backCorner')">Góc cuối lớp (Ảnh 4)</button>
+        <button onclick="setCameraView('podium')">Từ bục giảng</button>
+        <button onclick="setCameraView('overview')" style="grid-column: span 2;">Toàn cảnh 3D trên cao</button>
+      </div>
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Tốc độ quạt trần xanh ngọc</span>
+        <span id="fanVal">1.2x</span>
+      </label>
+      <input type="range" id="fanSpeed" min="0" max="3" step="0.1" value="1.2" />
+    </div>
+
+    <div class="control-group">
+      <label>
+        <span>Độ mở rèm cầu vồng</span>
+        <span id="blindVal">65%</span>
+      </label>
+      <input type="range" id="blindOpen" min="0" max="100" step="1" value="65" />
+    </div>
+
+    <div class="toggle-row">
+      <span>Bật đèn máng huỳnh quang</span>
+      <input type="checkbox" id="lightToggle" checked />
+    </div>
+    <div class="toggle-row">
+      <span>Hiển thị trần thạch cao</span>
+      <input type="checkbox" id="ceilingToggle" checked />
+    </div>
+  </div>
+
+  <!-- Three.js & OrbitControls -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xdbeafe);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    // Kích thước phòng học thực tế: Rộng 9m, Dài 14m, Cao 3.8m
+    const ROOM_W = 9;
+    const ROOM_L = 14;
+    const ROOM_H = 3.8;
+
+    // Ánh sáng tự nhiên & đèn phòng
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfffbeb, 0.9);
+    sunLight.position.set(12, 10, 4);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    scene.add(sunLight);
+
+    const roomLights = [];
+    const lightMeshes = [];
+
+    // Vật liệu dùng chung
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xf4f4f0, roughness: 0.85 });
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0xdcded9, roughness: 0.25, metalness: 0.1 });
+    const woodDeskMat = new THREE.MeshStandardMaterial({ color: 0xd7b377, roughness: 0.55 });
+    const steelFrameMat = new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.4, metalness: 0.6 });
+    const fanCyanMat = new THREE.MeshStandardMaterial({ color: 0x67b7c1, roughness: 0.35 });
+    const darkWoodDoorMat = new THREE.MeshStandardMaterial({ color: 0x6b4f35, roughness: 0.6 });
+
+    // 1. SÀN LỚP HỌC (Gạch men bóng có đường ron mờ)
+    const floorGeo = new THREE.PlaneGeometry(ROOM_W, ROOM_L);
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // 2. TƯỜNG BAO QUANH & TRỤ CỘT TƯỜNG
+    // Tường trước (Bảng xanh)
+    const frontWall = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W, ROOM_H, 0.2), wallMat);
+    frontWall.position.set(0, ROOM_H / 2, -ROOM_L / 2);
+    scene.add(frontWall);
+
+    // Tường sau (Có cửa sổ rèm cầu vồng bên trái)
+    const backWallRight = new THREE.Mesh(new THREE.BoxGeometry(5.2, ROOM_H, 0.2), wallMat);
+    backWallRight.position.set(-1.9, ROOM_H / 2, ROOM_L / 2);
+    scene.add(backWallRight);
+
+    const backWallLeft = new THREE.Mesh(new THREE.BoxGeometry(1.2, ROOM_H, 0.2), wallMat);
+    backWallLeft.position.set(3.9, ROOM_H / 2, ROOM_L / 2);
+    scene.add(backWallLeft);
+
+    const backWallBottom = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.1, 0.2), wallMat);
+    backWallBottom.position.set(2.0, 0.55, ROOM_L / 2);
+    scene.add(backWallBottom);
+
+    const backWallTop = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.6, 0.2), wallMat);
+    backWallTop.position.set(2.0, ROOM_H - 0.3, ROOM_L / 2);
+    scene.add(backWallTop);
+
+    // Tường trái (Có cửa trước & cửa sau mở ra hành lang cầu thang như Ảnh 4)
+    const leftWallMain = new THREE.Mesh(new THREE.BoxGeometry(0.2, ROOM_H, 10.2), wallMat);
+    leftWallMain.position.set(-ROOM_W / 2, ROOM_H / 2, -0.4);
+    scene.add(leftWallMain);
+
+    const leftWallBackCorner = new THREE.Mesh(new THREE.BoxGeometry(0.2, ROOM_H, 1.0), wallMat);
+    leftWallBackCorner.position.set(-ROOM_W / 2, ROOM_H / 2, 6.5);
+    scene.add(leftWallBackCorner);
+
+    const leftWallAboveDoor = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.4, 2.8), wallMat);
+    leftWallAboveDoor.position.set(-ROOM_W / 2, ROOM_H - 0.7, 5.1);
+    scene.add(leftWallAboveDoor);
+
+    // Các trụ cột nhô nhẹ trên tường trái & phải
+    [-4.5, 0, 4.5].forEach(zPos => {
+      const colL = new THREE.Mesh(new THREE.BoxGeometry(0.25, ROOM_H, 0.45), wallMat);
+      colL.position.set(-ROOM_W / 2 + 0.08, ROOM_H / 2, zPos);
+      scene.add(colL);
+
+      const colR = new THREE.Mesh(new THREE.BoxGeometry(0.25, ROOM_H, 0.45), wallMat);
+      colR.position.set(ROOM_W / 2 - 0.08, ROOM_H / 2, zPos);
+      scene.add(colR);
+    });
+
+    // Tường phải (Có 3 ô cửa sổ lớn lắp rèm cầu vồng)
+    const rightWallBottom = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.1, ROOM_L), wallMat);
+    rightWallBottom.position.set(ROOM_W / 2, 0.55, 0);
+    scene.add(rightWallBottom);
+
+    const rightWallTop = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, ROOM_L), wallMat);
+    rightWallTop.position.set(ROOM_W / 2, ROOM_H - 0.3, 0);
+    scene.add(rightWallTop);
+
+    [-6.2, -2.2, 1.8, 5.8].forEach(zPos => {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.1, 1.3), wallMat);
+      pillar.position.set(ROOM_W / 2, 2.15, zPos);
+      scene.add(pillar);
+    });
+
+    // 3. BẢNG XANH GHÉP 4 TẤM, ĐỒNG HỒ & BỤC GIẢNG
+    const boardGroup = new THREE.Group();
+    const boardMat = new THREE.MeshStandardMaterial({ color: 0x1e3f32, roughness: 0.65 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.7, roughness: 0.3 });
+
+    for (let i = 0; i < 4; i++) {
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(1.35, 1.25, 0.04), boardMat);
+      panel.position.set(-2.025 + i * 1.35, 2.0, -ROOM_L / 2 + 0.12);
+      boardGroup.add(panel);
+
+      const divider = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.27, 0.05), frameMat);
+      divider.position.set(-2.7 + i * 1.35, 2.0, -ROOM_L / 2 + 0.12);
+      boardGroup.add(divider);
+    }
+    const tray = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.05, 0.12), frameMat);
+    tray.position.set(0, 1.36, -ROOM_L / 2 + 0.15);
+    boardGroup.add(tray);
+    scene.add(boardGroup);
+
+    // Đồng hồ tròn góc trái trên
+    const clock = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.18, 0.04, 24),
+      new THREE.MeshStandardMaterial({ color: 0xffffff })
+    );
+    clock.rotation.x = Math.PI / 2;
+    clock.position.set(-4.1, 3.1, -ROOM_L / 2 + 0.12);
+    scene.add(clock);
+
+    // 4. KHU VỰC CỬA GỖ CÓ Ô KÍNH DỌC & CẦU THANG BÊN NGOÀI (Từ Ảnh 4 mới)
+    const doorHallwayGroup = new THREE.Group();
+    // Khung bao cửa gỗ
+    const doorFrameTop = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 1.35), darkWoodDoorMat);
+    doorFrameTop.position.set(-ROOM_W / 2, 2.4, 5.25);
+    doorHallwayGroup.add(doorFrameTop);
+
+    // Cánh cửa gỗ có ô kính dọc đang mở
+    const doorLeafGroup = new THREE.Group();
+    doorLeafGroup.position.set(-ROOM_W / 2, 1.2, 5.85);
+    doorLeafGroup.rotation.y = 0.35; // Mở hé như trong ảnh
+    const doorWood = new THREE.Mesh(new THREE.BoxGeometry(0.06, 2.4, 0.95), darkWoodDoorMat);
+    doorWood.position.set(0, 0, -0.47);
+    doorLeafGroup.add(doorWood);
+
+    const doorGlass = new THREE.Mesh(
+      new THREE.BoxGeometry(0.07, 1.8, 0.22),
+      new THREE.MeshPhysicalMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.55, roughness: 0.1 })
+    );
+    doorGlass.position.set(0, 0, -0.47);
+    doorLeafGroup.add(doorGlass);
+    doorHallwayGroup.add(doorLeafGroup);
+
+    // Thảm chùi chân màu đen trước cửa
+    const doorMatMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.75, 0.015, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0x1f2937, roughness: 0.95 })
+    );
+    doorMatMesh.position.set(-ROOM_W / 2 + 0.35, 0.01, 5.25);
+    doorHallwayGroup.add(doorMatMesh);
+
+    // Hành lang lát gạch trắng và Cầu thang bộ có người quét dọn bên ngoài cửa
+    const corridorFloor = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.8, 5.0),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 })
+    );
+    corridorFloor.rotation.x = -Math.PI / 2;
+    corridorFloor.position.set(-ROOM_W / 2 - 1.9, 0.0, 5.0);
+    doorHallwayGroup.add(corridorFloor);
+
+    const stairLanding = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.25, 1.6), wallMat);
+    stairLanding.position.set(-ROOM_W / 2 - 2.6, 1.6, 4.8);
+    doorHallwayGroup.add(stairLanding);
+
+    // Các bậc cầu thang & lan can sắt đen
+    for (let s = 0; s < 7; s++) {
+      const step = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 0.3), wallMat);
+      step.position.set(-ROOM_W / 2 - 1.6, 0.2 + s * 0.2, 3.0 + s * 0.25);
+      doorHallwayGroup.add(step);
+
+      const bar = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.015, 0.015, 0.85),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b })
+      );
+      bar.position.set(-ROOM_W / 2 - 1.1, 0.65 + s * 0.2, 3.0 + s * 0.25);
+      doorHallwayGroup.add(bar);
+    }
+
+    // Mô hình cô/chú lao công đang quét trên cầu thang (trong ảnh 6320.jpg)
+    const cleanerGroup = new THREE.Group();
+    const cleanerBody = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.16, 0.55, 8, 16),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b })
+    );
+    cleanerBody.position.set(0, 0.55, 0);
+    cleanerGroup.add(cleanerBody);
+    const cleanerHead = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, 16, 16),
+      new THREE.MeshStandardMaterial({ color: 0xeab676 })
+    );
+    cleanerHead.position.set(0.05, 1.0, 0);
+    cleanerGroup.add(cleanerHead);
+    cleanerGroup.position.set(-ROOM_W / 2 - 2.3, 1.72, 4.6);
+    doorHallwayGroup.add(cleanerGroup);
+
+    scene.add(doorHallwayGroup);
+
+    // 5. HỆ THỐNG RÈM CẦU VỒNG (ZEBRA BLINDS) TRÊN CỬA SỔ PHẢI & CUỐI LỚP
+    const blindStripes = [];
+    function createZebraWindow(x, y, z, width, height, rotY) {
+      const winGroup = new THREE.Group();
+      winGroup.position.set(x, y, z);
+      winGroup.rotation.y = rotY;
+
+      const numStripes = 14;
+      const stripeH = height / numStripes;
+      for (let i = 0; i < numStripes; i++) {
+        const isDark = i % 2 === 0;
+        const mat = new THREE.MeshStandardMaterial({
+          color: isDark ? 0x334155 : 0xf8fafc,
+          transparent: !isDark,
+          opacity: isDark ? 0.92 : 0.45,
+          side: THREE.DoubleSide
+        });
+        const stripe = new THREE.Mesh(new THREE.PlaneGeometry(width, stripeH * 0.92), mat);
+        stripe.position.set(0, height / 2 - (i + 0.5) * stripeH, 0);
+        winGroup.add(stripe);
+        blindStripes.push({ mesh: stripe, baseY: stripe.position.y, maxH: height / 2 });
+      }
+      scene.add(winGroup);
+    }
+
+    // 3 cửa sổ tường phải + 1 cửa sổ tường cuối lớp
+    createZebraWindow(ROOM_W / 2 - 0.12, 2.15, -4.2, 2.6, 2.0, -Math.PI / 2);
+    createZebraWindow(ROOM_W / 2 - 0.12, 2.15, -0.2, 2.6, 2.0, -Math.PI / 2);
+    createZebraWindow(ROOM_W / 2 - 0.12, 2.15, 3.8, 2.6, 2.0, -Math.PI / 2);
+    createZebraWindow(2.0, 2.15, ROOM_L / 2 - 0.12, 2.5, 2.0, Math.PI);
+
+    // 6. TRẦN THẠCH CAO Ô VUÔNG, 6 QUẠT TRẦN XANH NGỌC, ĐÈN MÁNG & ĐIỀU HÒA CASSETTE
+    const ceilingGroup = new THREE.Group();
+    const ceilingPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(ROOM_W, ROOM_L),
+      new THREE.MeshStandardMaterial({ color: 0xfafaf9, side: THREE.DoubleSide, roughness: 0.9 })
+    );
+    ceilingPlane.rotation.x = Math.PI / 2;
+    ceilingPlane.position.y = ROOM_H;
+    ceilingGroup.add(ceilingPlane);
+
+    // Lưới khung xương trần thạch cao 0.6m x 0.6m
+    const gridHelper = new THREE.GridHelper(ROOM_L, 22, 0xcbd5e1, 0xd1d5db);
+    gridHelper.position.y = ROOM_H - 0.01;
+    ceilingGroup.add(gridHelper);
+
+    // 6 Quạt trần 3 cánh màu xanh ngọc
+    const fans = [];
+    const fanCoords = [
+      [-2.1, -3.8], [2.1, -3.8],
+      [-2.1, 0.2],  [2.1, 0.2],
+      [-2.1, 4.2],  [2.1, 4.2]
+    ];
+    fanCoords.forEach(([fx, fz]) => {
+      const fanUnit = new THREE.Group();
+      fanUnit.position.set(fx, ROOM_H - 0.35, fz);
+
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.35), fanCyanMat);
+      rod.position.y = 0.175;
+      fanUnit.add(rod);
+
+      const rotor = new THREE.Group();
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.06, 20), fanCyanMat);
+      rotor.add(hub);
+
+      for (let b = 0; b < 3; b++) {
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.012, 0.14), fanCyanMat);
+        blade.position.x = 0.38;
+        const pivot = new THREE.Group();
+        pivot.rotation.y = (b * Math.PI * 2) / 3;
+        pivot.add(blade);
+        rotor.add(pivot);
+      }
+      fanUnit.add(rotor);
+      ceilingGroup.add(fanUnit);
+      fans.push(rotor);
+    });
+
+    // 2 Điều hòa âm trần Cassette
+    [[0, -1.8], [0, 2.4]].forEach(([ax, az]) => {
+      const ac = new THREE.Mesh(
+        new THREE.BoxGeometry(0.85, 0.06, 0.85),
+        new THREE.MeshStandardMaterial({ color: 0xf1f5f9 })
+      );
+      ac.position.set(ax, ROOM_H - 0.03, az);
+      ceilingGroup.add(ac);
+
+      const acVent = new THREE.Mesh(
+        new THREE.BoxGeometry(0.55, 0.07, 0.55),
+        new THREE.MeshStandardMaterial({ color: 0x334155 })
+      );
+      acVent.position.set(ax, ROOM_H - 0.035, az);
+      ceilingGroup.add(acVent);
+    });
+
+    // Đèn máng huỳnh quang âm trần
+    const lightPositions = [
+      [-2.1, -5.2], [2.1, -5.2],
+      [-2.1, -1.8], [2.1, -1.8],
+      [-2.1, 2.2],  [2.1, 2.2],
+      [1.8, 5.5]
+    ];
+    lightPositions.forEach(([lx, lz]) => {
+      const lampMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: 0xffffff,
+        emissiveIntensity: 0.9
+      });
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.03, 1.2), lampMat);
+      lamp.position.set(lx, ROOM_H - 0.02, lz);
+      ceilingGroup.add(lamp);
+      lightMeshes.push(lampMat);
+
+      const ptLight = new THREE.PointLight(0xf8fafc, 0.45, 7);
+      ptLight.position.set(lx, ROOM_H - 0.25, lz);
+      scene.add(ptLight);
+      roomLights.push(ptLight);
+    });
+
+    scene.add(ceilingGroup);
+
+    // 7. 3 DÃY BÀN HỌC DÀI LIỀN GHẾ BĂNG GỖ VÀNG SÁNG & VẬT DỤNG THỰC TẾ
+    function createClassroomDeskRow(xPos, zPos) {
+      const unit = new THREE.Group();
+      unit.position.set(xPos, 0, zPos);
+
+      const deskW = 2.15;
+      // Mặt bàn gỗ
+      const top = new THREE.Mesh(new THREE.BoxGeometry(deskW, 0.03, 0.45), woodDeskMat);
+      top.position.set(0, 0.74, 0);
+      top.castShadow = true;
+      unit.add(top);
+
+      // Tấm chắn trước bàn (Modesty panel)
+      const frontShield = new THREE.Mesh(new THREE.BoxGeometry(deskW, 0.22, 0.02), woodDeskMat);
+      frontShield.position.set(0, 0.62, -0.21);
+      unit.add(frontShield);
+
+      // Mặt ghế băng & tựa lưng gỗ
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(deskW, 0.03, 0.32), woodDeskMat);
+      seat.position.set(0, 0.44, 0.46);
+      unit.add(seat);
+
+      const backrest = new THREE.Mesh(new THREE.BoxGeometry(deskW, 0.16, 0.025), woodDeskMat);
+      backrest.position.set(0, 0.68, 0.62);
+      unit.add(backrest);
+
+      // Khung chân sắt hộp màu xám bạc
+      [-deskW / 2 + 0.12, 0, deskW / 2 - 0.12].forEach(lx => {
+        const legDesk = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.74, 0.04), steelFrameMat);
+        legDesk.position.set(lx, 0.37, -0.15);
+        unit.add(legDesk);
+
+        const legSeat = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.72, 0.04), steelFrameMat);
+        legSeat.position.set(lx, 0.36, 0.6);
+        unit.add(legSeat);
+
+        const barLink = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.8), steelFrameMat);
+        barLink.position.set(lx, 0.15, 0.22);
+        unit.add(barLink);
+      });
+
+      scene.add(unit);
+    }
+
+    const colX = [-2.75, 0, 2.75];
+    const rowZ = [-4.2, -2.7, -1.2, 0.3, 1.8, 3.3, 4.8];
+    colX.forEach(cx => {
+      rowZ.forEach(rz => createClassroomDeskRow(cx, rz));
+    });
+
+    // 8. CÁC VẬT DỤNG ĐẶC TRƯNG TRONG 4 BỨC ẢNH
+    // Sổ đầu bài màu xanh dương trên bàn dãy giữa
+    const logbook = new THREE.Mesh(
+      new THREE.BoxGeometry(0.24, 0.02, 0.32),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8 })
+    );
+    logbook.position.set(-0.2, 0.765, 3.3);
+    scene.add(logbook);
+
+    // Chiếc ô gấp màu xám-xanh ngay bàn sát cửa ra vào (Ảnh 6320.jpg)
+    const greyUmbrella = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.045, 0.03, 0.42, 12),
+      new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
+    );
+    greyUmbrella.rotation.z = Math.PI / 2;
+    greyUmbrella.rotation.y = -0.35;
+    greyUmbrella.position.set(-2.95, 0.78, 4.8);
+    scene.add(greyUmbrella);
+
+    // Chiếc ô gấp màu đen trên bàn dãy phải (Ảnh 6322 & 6323)
+    const blackUmbrella = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.025, 0.4, 12),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b })
+    );
+    blackUmbrella.rotation.z = Math.PI / 2;
+    blackUmbrella.rotation.y = 0.4;
+    blackUmbrella.position.set(2.4, 0.78, 3.3);
+    scene.add(blackUmbrella);
+
+    // Balo màu đen ở hàng ghế cuối lớp (Ảnh 6323)
+    const backpack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.32, 0.38, 0.22),
+      new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.8 })
+    );
+    backpack.position.set(-0.55, 0.64, 5.25);
+    scene.add(backpack);
+
+    // Cây chổi cán đỏ ở góc tường cuối lớp (Ảnh 6323)
+    const broomStick = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.012, 0.012, 1.1),
+      new THREE.MeshStandardMaterial({ color: 0xdc2626 })
+    );
+    broomStick.position.set(-1.2, 0.55, ROOM_L / 2 - 0.22);
+    broomStick.rotation.z = -0.15;
+    scene.add(broomStick);
+
+    // 9. ĐIỀU KHIỂN GÓC NHÌN CAMERA & TƯƠNG TÁC
+    window.setCameraView = function(view) {
+      if (view === 'backSeat') {
+        camera.position.set(-0.3, 1.35, 5.55);
+        controls.target.set(0, 1.45, -2.0);
+      } else if (view === 'doorStair') {
+        camera.position.set(-1.9, 1.35, 5.4);
+        controls.target.set(-4.8, 1.35, 5.1);
+      } else if (view === 'backCorner') {
+        camera.position.set(-0.6, 1.35, 5.5);
+        controls.target.set(1.2, 1.6, 6.5);
+      } else if (view === 'podium') {
+        camera.position.set(0, 1.75, -5.8);
+        controls.target.set(0, 1.1, 2.0);
+      } else if (view === 'overview') {
+        ceilingGroup.visible = false;
+        document.getElementById('ceilingToggle').checked = false;
+        camera.position.set(8.5, 9.5, 9.5);
+        controls.target.set(0, 0.5, 0.5);
+      }
+      controls.update();
+    };
+
+    // Mặc định vào góc ngồi cuối lớp
+    setCameraView('backSeat');
+
+    // Sự kiện thanh trượt & nút bật tắt
+    let currentFanSpeed = 1.2;
+    document.getElementById('fanSpeed').addEventListener('input', e => {
+      currentFanSpeed = parseFloat(e.target.value);
+      document.getElementById('fanVal').textContent = currentFanSpeed.toFixed(1) + 'x';
+    });
+
+    document.getElementById('blindOpen').addEventListener('input', e => {
+      const pct = parseInt(e.target.value, 10);
+      document.getElementById('blindVal').textContent = pct + '%';
+      const factor = pct / 100;
+      blindStripes.forEach(item => {
+        item.mesh.scale.y = 0.2 + 0.8 * factor;
+      });
+    });
+
+    document.getElementById('lightToggle').addEventListener('change', e => {
+      const on = e.target.checked;
+      roomLights.forEach(l => (l.intensity = on ? 0.45 : 0));
+      lightMeshes.forEach(m => (m.emissiveIntensity = on ? 0.9 : 0.05));
+    });
+
+    document.getElementById('ceilingToggle').addEventListener('change', e => {
+      ceilingGroup.visible = e.target.checked;
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Vòng lặp Render
+    function animate() {
+      requestAnimationFrame(animate);
+      fans.forEach(rotor => {
+        rotor.rotation.y += 0.06 * currentFanSpeed;
+      });
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
